@@ -2,5 +2,9 @@
   "name": "touched",
   "version": "0.1.0",
   "description": "List the markdown files changed this session and preview them in a pane",
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Allan Kent"
+  },
+  "repository": "https://github.com/allank/touched"
 }
