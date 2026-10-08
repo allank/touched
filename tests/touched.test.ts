@@ -79,6 +79,8 @@ async function setup($: any, on: any, w: World, now = 1000) {
 const edit = ($: any, path: string) =>
   $.tool.call({ tool: 'Edit', file_path: path, old_string: 'a', new_string: 'b' })
 
+const run = ($: any) => $.command.run({ command: 'touched', args: '' })
+
 const open = async ($: any) => {
   await $.command.run({ command: 'touched', args: '' })
   return $.ui.mount(PANE)
@@ -327,10 +329,10 @@ test('/touched toggles: a second run closes the open pane, a third reopens it', 
   const w = world({ '/work/a.md': '# A' })
   await setup($, on, w)
   await edit($, '/work/a.md')
-  await $.command.run({ command: 'touched', args: '' })
+  await run($)
   expect([w.opens, w.closes]).toEqual([1, 0])
-  await $.command.run({ command: 'touched', args: '' })
+  await run($)
   expect([w.opens, w.closes]).toEqual([1, 1])
-  await $.command.run({ command: 'touched', args: '' })
+  await run($)
   expect([w.opens, w.closes]).toEqual([2, 1])
 })
