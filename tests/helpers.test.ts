@@ -19,3 +19,9 @@ test('chunks never exceed the limit, even for one huge line', () => {
   expect(chunks.map(c => c.length)).toEqual([9800, 9800, 5400])
   expect(chunksOf('a\n\nb', 9800)).toEqual(['a\n\nb'])
 })
+
+test('a longer fence containing a shorter one stays one block', () => {
+  const body = '````\n```\n\n```\n````\n\nafter'
+  expect(chunksOf(body, 20)[0]).toBe('````\n```\n\n```\n````')
+  expect(titleOf('````\n```\n# inner\n```\n````\n# Outer\n')).toBe('Outer')
+})

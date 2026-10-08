@@ -23,6 +23,7 @@ type World = {
   gitExit: number
   gitCalls: string[][]
   scrolls: unknown[]
+  now: () => number
   closes: number
   readOnlyCommands: string[]
   deny: boolean
@@ -30,11 +31,12 @@ type World = {
 }
 
 function world(files: Record<string, string> = {}): World {
-  return { files, mtimes: {}, gitOut: '', gitExit: 0, gitCalls: [], scrolls: [], closes: 0, readOnlyCommands: [], deny: false, unreadable: false }
+  return { files, mtimes: {}, gitOut: '', gitExit: 0, gitCalls: [], scrolls: [], now: () => 0, closes: 0, readOnlyCommands: [], deny: false, unreadable: false }
 }
 
 async function setup($: any, on: any, w: World, now = 1000) {
   const clock = mock.clock(on, { now })
+  w.now = () => clock.now()
   on('tool.call', (_: any, e: any) =>
     w.deny
       ? { deny: 'no' }
@@ -56,7 +58,7 @@ async function setup($: any, on: any, w: World, now = 1000) {
   on('fs.exists', (_: any, e: any) => ({ value: e.path in w.files }))
   on('fs.read', (_: any, e: any) => (w.unreadable ? { deny: 'too big' } : { value: w.files[e.path] ?? '' }))
   on('fs.stat', (_: any, e: any) => ({
-    value: { kind: 'file', size: 1, mtimeMs: w.mtimes[e.path] ?? 0, isLink: false },
+    value: { kind: 'file', size: 1, mtimeMs: w.mtimes[e.path] ?? w.now(), isLink: false },
   }))
   on('process.run', (_: any, e: any) => {
     w.gitCalls.push([...e.argv])
@@ -265,4 +267,50 @@ test('the list refreshes when an edit lands while the pane is open', async ($, o
   await clock.advance(10)
   await edit($, '/work/b.md')
   expect(await labels(ui)).toEqual(['B — b.md', 'A — a.md'])
+})
+
+test('a shell-detected file and an edited file are ordered by one clock (file mtime)', async ($, on) => {
+  const w = world({ '/work/shell.md': '# Shell', '/work/edit.md': '# Edit' })
+  w.mtimes = { '/work/shell.md': 2000, '/work/edit.md': 3000 }
+  w.gitOut = 'shell.md\n'
+  const clock = await setup($, on, w, 1000)
+  await clock.advance(700)
+  await edit($, '/work/edit.md')
+  await $.tool.call({ tool: 'Bash', command: 'echo x >> shell.md' })
+  const ui = await open($)
+  expect(await labels(ui)).toEqual(['Edit — edit.md', 'Shell — shell.md'])
+})
+
+test('the rescan matches markdown extensions case-insensitively', async ($, on) => {
+  const w = world({ '/work/NOTES.MD': '# Notes' })
+  w.gitOut = 'NOTES.MD\n'
+  await setup($, on, w)
+  await $.tool.call({ tool: 'Bash', command: 'echo x >> NOTES.MD' })
+  expect(w.gitCalls[0]?.at(-1)).toBe(':(icase)*.md')
+  const ui = await open($)
+  expect(await labels(ui)).toEqual(['Notes — NOTES.MD'])
+})
+
+test('titles are sanitised for display', async ($, on) => {
+  const w = world({ '/work/a.md': '# Hi\x1b[31m   there\t' + 'x'.repeat(200) })
+  await setup($, on, w)
+  await edit($, '/work/a.md')
+  const ui = await open($)
+  const [label] = await labels(ui)
+  expect(label?.includes('\x1b')).toBe(false)
+  expect(label?.startsWith('Hi [31m there')).toBe(true)
+  expect(label!.length).toBeLessThan(120)
+})
+
+test('a code fence with blank lines is never split across pages', async ($, on) => {
+  const code = '```\n' + ('line\n\n').repeat(700) + '```'
+  const w = world({ '/work/c.md': 'word '.repeat(1200) + '\n\n' + code + '\n\noutro' })
+  await setup($, on, w)
+  await edit($, '/work/c.md')
+  const ui = await open($)
+  await ui.press({ key: 'row-0' })
+  const first = (await ui.find({ type: 'Markdown' })).props.text as string
+  const fences = first.split('\n').filter((l: string) => l.startsWith('```')).length
+  expect(fences % 2).toBe(0)
+  expect(first.includes('line')).toBe(false)
 })

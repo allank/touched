@@ -1,7 +1,29 @@
+import { blocksOf, nextFence } from './fences'
+
 /** The most characters one markdown element takes is 10,000; stay under it. */
 export const CHUNK_MAX = 9800
 
+/** Splits one oversized block by lines; a fenced block is closed and reopened across each cut. */
 function hardSplit(block: string, max: number): string[] {
+  const lines = block.split('\n')
+  const opener = lines[0] ?? ''
+  const open = nextFence(opener, undefined)
+
+  if (open === undefined) {
+    return rawSplit(block, max)
+  }
+
+  const closer = open.mark.repeat(open.length)
+  const last = lines.at(-1) ?? ''
+  const hasCloser = lines.length > 1 && nextFence(last, open) === undefined
+  const inner = lines.slice(1, hasCloser ? -1 : undefined).join('\n')
+  const room = Math.max(1, max - opener.length - closer.length - 2)
+
+  return rawSplit(inner, room).map(part => opener + '\n' + part + '\n' + closer)
+}
+
+function rawSplit(block: string, limit: number): string[] {
+  const max = Math.max(1, limit)
   const parts: string[] = []
   let current = ''
 
@@ -39,7 +61,7 @@ function hardSplit(block: string, max: number): string[] {
  * (and so at headings and paragraphs) where it can.
  */
 export function chunksOf(body: string, max: number = CHUNK_MAX): string[] {
-  const blocks = body.split(/\n{2,}/).flatMap(block => (block.length > max ? hardSplit(block, max) : [block]))
+  const blocks = blocksOf(body).flatMap(block => (block.length > max ? hardSplit(block, max) : [block]))
   const chunks: string[] = []
   let current = ''
 

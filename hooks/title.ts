@@ -1,3 +1,6 @@
+import { nextFence } from './fences'
+import type { Fence } from './fences'
+
 /** Splits a leading YAML frontmatter block from the body. */
 export function splitFrontmatter(text: string): { front: string; body: string } {
   const match = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text)
@@ -28,24 +31,14 @@ export function titleOf(text: string): string | undefined {
     return unquote(fromFront)
   }
 
-  let fence: string | undefined
+  let fence: Fence
 
   for (const line of body.split(/\r?\n/)) {
-    const marker = /^\s*(```+|~~~+)/.exec(line)
+    const wasOpen = fence !== undefined
 
-    if (marker) {
-      const mark = marker[1]?.[0]
+    fence = nextFence(line, fence)
 
-      if (fence === undefined) {
-        fence = mark
-      } else if (mark === fence) {
-        fence = undefined
-      }
-
-      continue
-    }
-
-    if (fence === undefined) {
+    if (!wasOpen && fence === undefined) {
       const heading = /^#[ \t]+(.+?)[ \t]*#*[ \t]*$/.exec(line)
 
       if (heading?.[1] !== undefined) {
@@ -57,17 +50,32 @@ export function titleOf(text: string): string | undefined {
   return undefined
 }
 
+/** A title safe to draw: no control characters, runs of space collapsed, cut to 80. */
+export function sanitize(title: string): string {
+  const clean = title.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').replace(/\s+/g, ' ').trim()
+
+  return clean.length > 80 ? clean.slice(0, 79) + '…' : clean
+}
+
 export function baseNameOf(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1)
 }
 
+export function stemOf(path: string): string {
+  return baseNameOf(path).replace(/\.md$/i, '')
+}
+
+/** The title to draw: the document's own when it has one, else the filename without `.md`. */
+export function displayTitleOf(text: string, path: string): { title: string; isFallback: boolean } {
+  const found = titleOf(text)
+  const clean = found === undefined ? '' : sanitize(found)
+
+  return clean === '' ? { title: stemOf(path), isFallback: true } : { title: clean, isFallback: false }
+}
+
 /** The label a list row shows before the filename. */
 export function rowTitleOf(text: string, path: string): string {
-  const found = titleOf(text)
+  const { title, isFallback } = displayTitleOf(text, path)
 
-  if (found !== undefined) {
-    return found
-  }
-
-  return baseNameOf(path).replace(/\.md$/i, '') + ' (no title)'
+  return isFallback ? title + ' (no title)' : title
 }
