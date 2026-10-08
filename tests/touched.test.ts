@@ -25,13 +25,15 @@ type World = {
   scrolls: unknown[]
   now: () => number
   closes: number
+  opens: number
+  openPanes: string[]
   readOnlyCommands: string[]
   deny: boolean
   unreadable: boolean
 }
 
 function world(files: Record<string, string> = {}): World {
-  return { files, mtimes: {}, gitOut: '', gitExit: 0, gitCalls: [], scrolls: [], now: () => 0, closes: 0, readOnlyCommands: [], deny: false, unreadable: false }
+  return { files, mtimes: {}, gitOut: '', gitExit: 0, gitCalls: [], scrolls: [], now: () => 0, closes: 0, opens: 0, openPanes: [], readOnlyCommands: [], deny: false, unreadable: false }
 }
 
 async function setup($: any, on: any, w: World, now = 1000) {
@@ -46,13 +48,19 @@ async function setup($: any, on: any, w: World, now = 1000) {
   )
   on('session.start', () => ({ cwd: '/work' }))
   on('command.register', () => ({ value: undefined }))
-  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.open', (_: any, e: any) => {
+    w.opens += 1
+    w.openPanes.push(e.id)
+    return { value: { isPlaced: true } }
+  })
+  on('ui.panes', () => ({ value: w.openPanes.map(id => ({ id, title: id })) }))
   on('ui.scroll', { component: 'Pane', requestId: 'touched' }, (_: any, e: any) => {
     w.scrolls.push(e)
     return {}
   })
-  on('ui.close', () => {
+  on('ui.close', (_: any, e: any) => {
     w.closes += 1
+    w.openPanes = w.openPanes.filter(id => id !== e.id)
     return { value: undefined }
   })
   on('fs.exists', (_: any, e: any) => ({ value: e.path in w.files }))
@@ -313,4 +321,16 @@ test('a code fence with blank lines is never split across pages', async ($, on) 
   const fences = first.split('\n').filter((l: string) => l.startsWith('```')).length
   expect(fences % 2).toBe(0)
   expect(first.includes('line')).toBe(false)
+})
+
+test('/touched toggles: a second run closes the open pane, a third reopens it', async ($, on) => {
+  const w = world({ '/work/a.md': '# A' })
+  await setup($, on, w)
+  await edit($, '/work/a.md')
+  await $.command.run({ command: 'touched', args: '' })
+  expect([w.opens, w.closes]).toEqual([1, 0])
+  await $.command.run({ command: 'touched', args: '' })
+  expect([w.opens, w.closes]).toEqual([1, 1])
+  await $.command.run({ command: 'touched', args: '' })
+  expect([w.opens, w.closes]).toEqual([2, 1])
 })

@@ -229,6 +229,12 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'touched' }, async $ => {
+    if ((await $.ui.panes()).some(pane => pane.id === PANE)) {
+      await $.ui.close({ id: PANE })
+
+      return { text: 'Touched pane closed.' }
+    }
+
     await showList($)
     await $.ui.open({ id: PANE, title: 'Touched', focus: true, closeOnEscape: true })
 
